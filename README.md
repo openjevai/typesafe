@@ -9,6 +9,8 @@ one request, and get back structs with probabilities that your code acts on.
 
 This is a community client, not an official TypeSafe SDK.
 
+> **OpenJEV support:** Jev is built by [TypeSafe](https://typesafe.ai). This fork keeps TypeSafe as the default and adds optional support for [OpenJEV](https://openjev.sh), a free community gateway to the same Jev model — set `OPENJEV_API_KEY` (or `JEV_PROVIDER=openjev`) to use it. Original project: https://github.com/mattneel/typesafe by @mattneel.
+
 ```elixir
 client = TypeSafe.new(api_key: System.fetch_env!("TYPESAFE_API_KEY"))
 
@@ -132,6 +134,26 @@ config :typesafe,
 `ask/4` also takes per-call `:model`, `:timeout`, `:retry`, `:headers` and
 `:telemetry_metadata` options. `TYPESAFE_LOG_LEVEL` is not read: configure Elixir's `Logger`
 instead. See `TypeSafe.Client` for details.
+
+### OpenJEV
+
+[OpenJEV](https://openjev.sh) is a free community gateway to the same Jev model. TypeSafe
+stays the default; OpenJEV is opt-in. Set `JEV_PROVIDER=openjev` (or pass `provider: :openjev`)
+to select it explicitly, or simply set `OPENJEV_API_KEY` without a `TYPESAFE_API_KEY`:
+
+```bash
+# Option 1: explicit provider
+export JEV_PROVIDER=openjev
+export OPENJEV_API_KEY=...
+
+# Option 2: auto-detected (no TYPESAFE_API_KEY set)
+export OPENJEV_API_KEY=...
+```
+
+When OpenJEV is selected, the API key comes from `OPENJEV_API_KEY`, `base_url` defaults to
+`https://api.openjev.sh` and `model` defaults to `"openjev"`. Explicit `:base_url` / `:model`
+options and `TYPESAFE_BASE_URL` / `TYPESAFE_DEFAULT_MODEL` overrides still apply. Anyone with
+a `TYPESAFE_API_KEY` sees zero behaviour change.
 
 ## Errors
 

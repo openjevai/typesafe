@@ -75,6 +75,12 @@ defmodule TypeSafe.Req do
     * `:base_url` - resolved the same way: this option, then `TYPESAFE_BASE_URL`, then
       `config :typesafe, :base_url`, then `https://api.typesafe.ai`.
     * `:model` - the default model, resolved the same way (default `"jev-latest"`).
+    * `:provider` - `:openjev` to use [OpenJEV](https://openjev.sh), or `:typesafe`
+      (default). Also set via `JEV_PROVIDER`. When OpenJEV is selected, the API key
+      comes from `OPENJEV_API_KEY` (or `:openjev_api_key`) and the defaults are
+      `https://api.openjev.sh` and model `"openjev"`.
+    * `:openjev_api_key` - OpenJEV API key, resolved like `:api_key` for the OpenJEV
+      provider. Also set via `OPENJEV_API_KEY`.
     * `:retry` - a `TypeSafe.Retry`, retry options, `false`, or `:keep` to leave the request's
       own retry settings alone. Defaults to the `TypeSafe.Retry` defaults, which retry `POST` requests
       on transient failures (Req's default only retries `GET` and `HEAD`). When a policy
@@ -96,10 +102,14 @@ defmodule TypeSafe.Req do
   def attach(%Req.Request{} = request, opts \\ []) do
     {retry, opts} = Keyword.pop(opts, :retry, %Retry{})
 
-    unknown = Keyword.keys(opts) -- [:api_key, :base_url, :model]
+    unknown = Keyword.keys(opts) -- [:api_key, :base_url, :model, :provider, :openjev_api_key]
     if unknown != [], do: raise(ArgumentError, "unknown options #{inspect(unknown)} for TypeSafe.Req.attach/2")
 
-    client = opts |> Keyword.take([:api_key, :base_url, :model]) |> Keyword.put(:retry, false) |> Client.new()
+    client =
+      opts
+      |> Keyword.take([:api_key, :base_url, :model, :provider, :openjev_api_key])
+      |> Keyword.put(:retry, false)
+      |> Client.new()
     retry = if retry == :keep, do: :keep, else: cast_retry!(retry)
 
     request

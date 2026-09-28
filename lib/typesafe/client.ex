@@ -81,6 +81,20 @@ defmodule TypeSafe.Client do
 
   A missing API key raises `ArgumentError` from `new/1`, never at request time.
 
+  ## OpenJEV provider
+
+  [OpenJEV](https://openjev.sh) is a free community gateway to the same Jev model.
+  TypeSafe stays the default; OpenJEV is opt-in:
+
+    1. `JEV_PROVIDER=openjev` (or `provider: :openjev`) selects OpenJEV explicitly.
+    2. Otherwise, if `TYPESAFE_API_KEY` is set, TypeSafe is used (unchanged default).
+    3. Otherwise, if only `OPENJEV_API_KEY` is set, OpenJEV is used.
+
+  When OpenJEV is selected, the API key comes from `OPENJEV_API_KEY` (unless an explicit
+  `:api_key` was passed), `base_url` defaults to `https://api.openjev.sh` and `model`
+  defaults to `"openjev"`. Explicit `:base_url` / `:model` options and `TYPESAFE_BASE_URL`
+  / `TYPESAFE_DEFAULT_MODEL` overrides still apply.
+
   `TYPESAFE_LOG_LEVEL` is intentionally not read: configure Elixir's `Logger` instead. Retries
   are logged by Req at `:debug`; the `:retries` count on the `[:typesafe, :request, :stop]`
   telemetry event is the intended signal.
@@ -144,7 +158,18 @@ defmodule TypeSafe.Client do
   # not one of them, and its traffic should not be attributed to them.
   @sdk "typesafe-elixir/#{@version}"
 
-  @env_vars %{api_key: "TYPESAFE_API_KEY", base_url: "TYPESAFE_BASE_URL", model: "TYPESAFE_DEFAULT_MODEL"}
+  @env_vars %{
+    api_key: "TYPESAFE_API_KEY",
+    base_url: "TYPESAFE_BASE_URL",
+    model: "TYPESAFE_DEFAULT_MODEL",
+    provider: "JEV_PROVIDER",
+    openjev_api_key: "OPENJEV_API_KEY"
+  }
+
+  # OpenJEV (https://openjev.sh) is a free community gateway to the same Jev model that
+  # TypeSafe serves. These defaults are used when the OpenJEV provider is selected.
+  @openjev_base_url "https://api.openjev.sh"
+  @openjev_model "openjev"
   @protected_headers ~w(authorization accept user-agent x-typesafe-sdk x-typesafe-runtime x-typesafe-retry-count)
 
   @call_schema Zoi.keyword(
@@ -181,6 +206,7 @@ defmodule TypeSafe.Client do
     if is_nil(resolved[:api_key]) do
       raise ArgumentError,
             "no TypeSafe API key: pass :api_key to TypeSafe.new/1, set the TYPESAFE_API_KEY environment variable, " <>
+              "or set OPENJEV_API_KEY (with JEV_PROVIDER=openjev) to use OpenJEV, " <>
               "or configure `config :typesafe, api_key: ...`"
     end
 
@@ -476,16 +502,58 @@ defmodule TypeSafe.Client do
 
   defp resolve(opts) do
     app_env = Application.get_all_env(:typesafe)
-    schema_keys = [:api_key, :base_url, :model, :timeout, :retry, :headers, :finch, :req_options]
 
-    schema_keys
-    |> Enum.reduce([], fn key, acc ->
-      case resolve_option(key, opts, app_env) do
-        nil -> acc
-        value -> Keyword.put(acc, key, value)
-      end
-    end)
-    |> Keyword.merge(Keyword.drop(opts, schema_keys))
+    schema_keys =
+      [:api_key, :base_url, :model, :timeout, :retry, :headers, :finch, :req_options, :provider, :openjev_api_key]
+
+    resolved =
+      schema_keys
+      |> Enum.reduce([], fn key, acc ->
+        case resolve_option(key, opts, app_env) do
+          nil -> acc
+          value -> Keyword.put(acc, key, value)
+        end
+      end)
+      |> Keyword.merge(Keyword.drop(opts, schema_keys))
+
+    apply_provider(resolved, opts)
+  end
+
+  # OpenJEV (https://openjev.sh) is a free community gateway to the same Jev model that
+  # TypeSafe serves. TypeSafe stays the default: an explicit `JEV_PROVIDER=openjev` (or
+  # `:provider` option) selects OpenJEV; otherwise OpenJEV is used only when no TypeSafe
+  # key is set but `OPENJEV_API_KEY` is. Anyone with a TypeSafe key sees zero behaviour change.
+  defp apply_provider(resolved, opts) do
+    case resolve_provider(resolved) do
+      :typesafe ->
+        resolved
+
+      :openjev ->
+        # An explicit `:api_key` passed to new/1 always wins; otherwise the key comes
+        # from OPENJEV_API_KEY. base_url and model default to OpenJEV unless already set
+        # via :base_url/TYPESAFE_BASE_URL or :model/TYPESAFE_DEFAULT_MODEL.
+        api_key =
+          if Keyword.has_key?(opts, :api_key),
+            do: opts[:api_key],
+            else: resolved[:openjev_api_key]
+
+        resolved
+        |> Keyword.put(:api_key, api_key)
+        |> Keyword.put_new(:base_url, @openjev_base_url)
+        |> Keyword.put_new(:model, @openjev_model)
+    end
+    |> Keyword.drop([:provider, :openjev_api_key])
+  end
+
+  defp resolve_provider(resolved) do
+    explicit = resolved[:provider]
+
+    cond do
+      explicit in ["openjev", :openjev] -> :openjev
+      explicit in ["typesafe", :typesafe] -> :typesafe
+      is_nil(resolved[:api_key]) and not is_nil(resolved[:openjev_api_key]) -> :openjev
+      true -> :typesafe
+    end
   end
 
   # App config and explicit `:req_options` merge, so a test `plug:` in config survives an
